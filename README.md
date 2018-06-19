@@ -54,7 +54,7 @@ start a tunnel on vps listening on :50000 and forward to 127.0.0.1:38080 :
 
 start a tunnel on local machine listening on :50000 and forward to 2.2.2.2:50000 :
 
-`shadowtunnel -E -f 127.0.0.1:38080 -l :50000`
+`shadowtunnel -E -f 2.2.2.2:38080 -l :50000`
 
 4.set http proxy configuration in chrome
 
