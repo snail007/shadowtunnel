@@ -22,7 +22,9 @@ Usage of ./shadowtunnel:
     	local listen address, such as : 0.0.0.0:33000 (default ":50000")
   -m string
     	method of encrypt/decrypt, these below are supported :
-    	aes-192-cfb,aes-128-ctr,des-cfb,bf-cfb,chacha20,chacha20-ietf,aes-128-cfb,aes-256-cfb,aes-192-ctr,aes-256-ctr,cast5-cfb,rc4-md5,rc4-md5-6 (default "aes-192-cfb")
+    	aes-192-cfb,aes-128-ctr,des-cfb,bf-cfb,chacha20,chacha20-ietf,
+      aes-128-cfb,aes-256-cfb,aes-192-ctr,aes-256-ctr,cast5-cfb,rc4-md5,
+      rc4-md5-6 (default "aes-192-cfb")
   -p string
     	password of encrypt/decrypt (default "shadowtunnel")
   -t int
