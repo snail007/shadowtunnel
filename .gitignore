@@ -4,7 +4,8 @@
 *.dll
 *.so
 *.dylib
-
+release-*
+/shadowtunnel
 # Test binary, build with `go test -c`
 *.test
 

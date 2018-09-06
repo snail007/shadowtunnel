@@ -10,27 +10,27 @@ local machine <----> shadowtunnel <---> service on remote.
 
 ```text
 Usage of ./shadowtunnel:
-  -E	outbound connection is encrypted
-  -U	outbound connection is udp
-  -c	compress traffic (default true)
+  -E  outbound connection is encrypted
+  -U  outbound connection is udp
+  -c  compress traffic (default true)
   -debug
-    	show debug info
-  -e	inbound connection is encrypted
+      show debug info
+  -e  inbound connection is encrypted
   -f string
-    	forward address,such as : 127.0.0.1:8080
+      forward address,such as : 127.0.0.1:8080
   -l string
-    	local listen address, such as : 0.0.0.0:33000 (default ":50000")
+      local listen address, such as : 0.0.0.0:33000 (default ":50000")
   -m string
-    	method of encrypt/decrypt, these below are supported :
-    	aes-192-cfb,aes-128-ctr,des-cfb,bf-cfb,chacha20,chacha20-ietf,
-        aes-128-cfb,aes-256-cfb,aes-192-ctr,aes-256-ctr,cast5-cfb,rc4-md5,
-        rc4-md5-6 (default "aes-192-cfb")
+      method of encrypt/decrypt, these below are supported :
+      aes-192-cfb,aes-128-ctr,aes-256-ctr,bf-cfb,rc4-md5-6,chacha20-ietf,
+      aes-128-cfb,aes-256-cfb,aes-192-ctr,des-cfb,cast5-cfb,rc4-md5,chacha20
+      (default "aes-192-cfb")
   -p string
-    	password of encrypt/decrypt (default "shadowtunnel")
+      password of encrypt/decrypt (default "shadowtunnel")
   -t int
-    	connection timeout seconds (default 3)
-  -u	inbound connection is udp
-  -v	show version
+      connection timeout seconds (default 3)
+  -u  inbound connection is udp
+  -v  show version
 ```
 
 ## Example
@@ -108,4 +108,3 @@ ip: 127.0.0.1
 port: 50000
 
 5.done
-

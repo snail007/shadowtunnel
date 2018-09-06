@@ -9,14 +9,15 @@ import (
 	"strings"
 	"time"
 
-	encryptconn "bitbucket.org/goproxy/proxy/net/common/transport/encrypt"
-	clienttransport "bitbucket.org/goproxy/proxy/net/transport/client"
-	srvtransport "bitbucket.org/goproxy/proxy/net/transport/server"
-	utils "bitbucket.org/goproxy/proxy/utils"
+	encryptconn "github.com/snail007/goproxy/core/lib/transport/encrypt"
+	tou "github.com/snail007/goproxy/core/dst"
+	clienttransport "github.com/snail007/goproxy/core/cs/client"
+	srvtransport "github.com/snail007/goproxy/core/cs/server"
+	utils "github.com/snail007/goproxy/utils"
 )
 
 const (
-	VERSION = "1.0"
+	VERSION = "1.1"
 )
 
 var (
@@ -31,6 +32,9 @@ var (
 	err             error
 	inboundEncrypt  bool
 	outboundEncrypt bool
+	inboundUDP      bool
+	outboundUDP     bool
+	Debug           bool
 	version         bool
 )
 
@@ -44,6 +48,9 @@ func main() {
 	flag.BoolVar(&compress, "c", true, "compress traffic")
 	flag.BoolVar(&inboundEncrypt, "e", false, "inbound connection is encrypted")
 	flag.BoolVar(&outboundEncrypt, "E", false, "outbound connection is encrypted")
+	flag.BoolVar(&inboundUDP, "u", false, "inbound connection is udp")
+	flag.BoolVar(&outboundUDP, "U", false, "outbound connection is udp")
+	flag.BoolVar(&Debug, "debug", false, "show debug info")
 	flag.BoolVar(&version, "v", false, "show version")
 	flag.Parse()
 	if version {
@@ -54,18 +61,33 @@ func main() {
 		flag.Usage()
 		return
 	}
-
+	if outboundUDP && !outboundEncrypt {
+		l.Fatal("outbound connection is udp , -E is required")
+		return
+	}
+	if inboundUDP && !inboundEncrypt {
+		l.Fatal("inbound connection is udp , -e is required")
+		return
+	}
+	tou.SetLogger(l)
+	if Debug {
+		l.SetFlags(log.LstdFlags | log.Lshortfile)
+	}
 	listen = srvtransport.NewServerChannelHost(listenAddr, l)
-	if inboundEncrypt {
-		err = listen.ListenTCPS(method, password, compress, callback)
+	if inboundUDP {
+		err = listen.ListenTOU(method, password, compress, callback)
 	} else {
-		err = listen.ListenTCP(callback)
+		if inboundEncrypt {
+			err = listen.ListenTCPS(method, password, compress, callback)
+		} else {
+			err = listen.ListenTCP(callback)
+		}
 	}
 
 	if err != nil {
 		l.Fatal(err)
 	}
-	l.Printf("shadowtunnel listen on : %s", (*listen.Listener).Addr())
+	l.Printf("shadowtunnel listen on : %s", listen.Addr())
 	select {}
 }
 
@@ -77,10 +99,15 @@ func callback(conn net.Conn) {
 	}()
 	remoteAddr := conn.RemoteAddr()
 	var outconn net.Conn
-	if outboundEncrypt {
-		outconn, err = clienttransport.TCPSConnectHost(forwardAddr, method, password, compress, timeout*1000)
+	if outboundUDP {
+		outconn, err = clienttransport.TOUConnectHost(forwardAddr, method, password, compress, timeout*1000)
+
 	} else {
-		outconn, err = net.DialTimeout("tcp", forwardAddr, time.Duration(timeout)*time.Second)
+		if outboundEncrypt {
+			outconn, err = clienttransport.TCPSConnectHost(forwardAddr, method, password, compress, timeout*1000)
+		} else {
+			outconn, err = net.DialTimeout("tcp", forwardAddr, time.Duration(timeout)*time.Second)
+		}
 	}
 	if err != nil {
 		l.Printf("%s <--> %s, error: %s", remoteAddr, forwardAddr, err)
