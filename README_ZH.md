@@ -1,12 +1,12 @@
 # shadowtunnel
 
-## About
+## 介绍
 
 shadowtunnel 是一款可以在你本地机器和远程服务之间建立安全的加密隧道，保护你的 tcp 流量，能高效压缩传输，流量无特征.
 
 local machine <----> shadowtunnel <---> service on remote.
 
-## Usage
+## 使用
 
 ```text
 Usage of ./shadowtunnel:
