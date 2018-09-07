@@ -49,7 +49,7 @@ download http proxy program, execute below on line command on vps with root:
 
 download shadowtunnel program, execute below on line command on vps with root:
 
-`wget https://github.com/snail007/shadowtunnel/releases/download/v1.0/shadowtunnel-linux-amd64.tar.gz && tar zxfv shadowtunnel-linux-amd64.tar.gz && rm shadowtunnel-linux-amd64.tar.gz && mv shadowtunnel /usr/bin/`
+`wget https://github.com/snail007/shadowtunnel/releases/download/v1.1/shadowtunnel-linux-amd64.tar.gz && tar zxfv shadowtunnel-linux-amd64.tar.gz && rm shadowtunnel-linux-amd64.tar.gz && mv shadowtunnel /usr/bin/`
 
 start a tunnel on vps listening on :50000 and forward to 127.0.0.1:38080 :
 
@@ -87,7 +87,7 @@ download http proxy program, execute below on line command on vps with root:
 
 download shadowtunnel program, execute below on line command on vps with root:
 
-`wget https://github.com/snail007/shadowtunnel/releases/download/v1.0/shadowtunnel-linux-amd64.tar.gz && tar zxfv shadowtunnel-linux-amd64.tar.gz && rm shadowtunnel-linux-amd64.tar.gz && mv shadowtunnel /usr/bin/`
+`wget https://github.com/snail007/shadowtunnel/releases/download/v1.1/shadowtunnel-linux-amd64.tar.gz && tar zxfv shadowtunnel-linux-amd64.tar.gz && rm shadowtunnel-linux-amd64.tar.gz && mv shadowtunnel /usr/bin/`
 
 start a tunnel on vps listening on udp :50000 and forward to tcp 127.0.0.1:38080 :
 
@@ -97,7 +97,7 @@ start a tunnel on vps listening on udp :50000 and forward to tcp 127.0.0.1:38080
 
 start a tunnel on local machine listening on tcp :50000 and forward to udp 2.2.2.2:50000 :
 
-`shadowtunnel -D -E -f 2.2.2.2:50000 -l :50000 -p your-password`
+`shadowtunnel -U -E -f 2.2.2.2:50000 -l :50000 -p your-password`
 
 4.set http proxy configuration in chrome
 
