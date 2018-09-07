@@ -48,7 +48,7 @@ wget https://github.com/snail007/goproxy/releases/download/v4.9/proxy-linux-amd6
 
 下载 shadowtunnel 程序，使用 root 权限在 vps 上执行下面的命令：
 
-wget https://github.com/snail007/shadowtunnel/releases/download/v1.0/shadowtunnel-linux-amd64.tar.gz && tar zxfv shadowtunnel-linux-amd64.tar.gz && rm shadowtunnel-linux-amd64.tar.gz && mv shadowtunnel /usr/bin/
+wget https://github.com/snail007/shadowtunnel/releases/download/v1.1/shadowtunnel-linux-amd64.tar.gz && tar zxfv shadowtunnel-linux-amd64.tar.gz && rm shadowtunnel-linux-amd64.tar.gz && mv shadowtunnel /usr/bin/
 
 在 vps 上监听 :50000 并转发到 127.0.0.1:38080 ：
 
@@ -84,7 +84,7 @@ port: 50000
 
 下载 shadowtunnel 程序，使用 root 权限在 vps 上执行下面的命令：
 
-`wget https://github.com/snail007/shadowtunnel/releases/download/v1.0/shadowtunnel-linux-amd64.tar.gz && tar zxfv shadowtunnel-linux-amd64.tar.gz && rm shadowtunnel-linux-amd64.tar.gz && mv shadowtunnel /usr/bin/`
+`wget https://github.com/snail007/shadowtunnel/releases/download/v1.1/shadowtunnel-linux-amd64.tar.gz && tar zxfv shadowtunnel-linux-amd64.tar.gz && rm shadowtunnel-linux-amd64.tar.gz && mv shadowtunnel /usr/bin/`
 
 在 vps 上监听UDP :50000 并转发到TCP 127.0.0.1:38080 ：
 
@@ -94,7 +94,7 @@ port: 50000
 
 在本地机器上监听TCP :50000 并转发到UDP 2.2.2.2:50000 :
 
-`shadowtunnel -D -E -f 2.2.2.2:50000 -l :50000 -p your-password`
+`shadowtunnel -U -E -f 2.2.2.2:50000 -l :50000 -p your-password`
 
 4.在 chrome 中设置 http 代理配置
 
