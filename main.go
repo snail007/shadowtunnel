@@ -76,7 +76,7 @@ func main() {
 	flag.BoolVar(&isDebug, "debug", false, "show debug info")
 	flag.BoolVar(&daemon, "daemon", false, "daemon mode")
 	flag.BoolVar(&forever, "forever", false, "forever mode")
-	flag.BoolVar(&profiling, "profiling", false, "profiling mode,in this mode, you should stopping process by : Ctrl+C or 'kill -s SIGHUP $PID_OF_shadowtunnel'")
+	flag.BoolVar(&profiling, "profiling", false, "profiling mode, in this mode, you should stopping process by : Ctrl+C or 'kill -s SIGHUP $PID_OF_shadowtunnel'")
 	flag.StringVar(&logfile, "log", "", "logging output to file")
 	flag.Parse()
 	if version {
