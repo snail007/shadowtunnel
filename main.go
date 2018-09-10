@@ -64,7 +64,7 @@ func main() {
 	flag.StringVar(&password, "p", "shadowtunnel", "password of encrypt/decrypt")
 	flag.StringVar(&forwardAddr, "f", "", "forward address,such as : 127.0.0.1:8080")
 	flag.IntVar(&timeout, "t", 3, "connection timeout seconds")
-	flag.BoolVar(&compress, "c", true, "compress traffic")
+	flag.BoolVar(&compress, "c", false, "compress traffic")
 	flag.BoolVar(&inboundEncrypt, "e", false, "inbound connection is encrypted")
 	flag.BoolVar(&outboundEncrypt, "E", false, "outbound connection is encrypted")
 	flag.BoolVar(&inboundUDP, "u", false, "inbound connection is udp")
