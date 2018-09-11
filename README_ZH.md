@@ -36,7 +36,9 @@ Usage of ./shadowtunnel:
         logging output to file
   -m string
         method of encrypt/decrypt, these below are supported :
-        aes-256-cfb,aes-128-ctr,aes-192-ctr,cast5-cfb,chacha20-ietf,rc4-md5-6,chacha20,aes-128-cfb,aes-192-cfb,aes-256-ctr,des-cfb,bf-cfb,rc4-md5 (default "aes-192-cfb")
+        aes-256-cfb,aes-128-ctr,aes-192-ctr,cast5-cfb,chacha20-ietf,rc4-md5-6,
+        chacha20,aes-128-cfb,aes-192-cfb,aes-256-ctr,des-cfb,bf-cfb,rc4-md5 
+        (default "aes-192-cfb")
   -nolog
         turn off logging
   -p string
