@@ -5,6 +5,7 @@
 *.so
 *.dylib
 release-*
+/cache.dat
 /shadowtunnel
 # Test binary, build with `go test -c`
 *.test

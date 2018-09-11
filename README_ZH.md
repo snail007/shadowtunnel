@@ -10,27 +10,45 @@ local machine <----> shadowtunnel <---> service on remote.
 
 ```text
 Usage of ./shadowtunnel:
-  -E  outbound connection is encrypted
-  -U  outbound connection is udp
-  -c  compress traffic (default true)
+  -E    outbound connection is encrypted
+  -U    outbound connection is udp
+  -c    compress traffic
+  -cache string
+        dns query cache file path (default "/tmp/go-build014924401/b001/exe/cache.dat")
+  -daemon
+        daemon mode
   -debug
-      show debug info
-  -e  inbound connection is encrypted
+        show debug info
+  -dns string
+        local dns server listen on address
+  -dns-proxy
+        is dns endpoint or not
+  -dns-server string
+        remote dns server to resolve domain (default "8.8.8.8:53")
+  -e    inbound connection is encrypted
   -f string
-      forward address,such as : 127.0.0.1:8080
+        forward address,such as : 127.0.0.1:8080
+  -forever
+        forever mode
   -l string
-      local listen address, such as : 0.0.0.0:33000 (default ":50000")
+        local listen address, such as : 0.0.0.0:33000 (default ":50000")
+  -log string
+        logging output to file
   -m string
-      method of encrypt/decrypt, these below are supported :
-      aes-192-cfb,aes-128-ctr,aes-256-ctr,bf-cfb,rc4-md5-6,chacha20-ietf,
-      aes-128-cfb,aes-256-cfb,aes-192-ctr,des-cfb,cast5-cfb,rc4-md5,chacha20
-      (default "aes-192-cfb")
+        method of encrypt/decrypt, these below are supported :
+        aes-256-cfb,aes-128-ctr,aes-192-ctr,cast5-cfb,chacha20-ietf,rc4-md5-6,chacha20,aes-128-cfb,aes-192-cfb,aes-256-ctr,des-cfb,bf-cfb,rc4-md5 (default "aes-192-cfb")
+  -nolog
+        turn off logging
   -p string
-      password of encrypt/decrypt (default "shadowtunnel")
+        password of encrypt/decrypt (default "shadowtunnel")
+  -profiling
+        profiling mode, in this mode, you should stopping process by : Ctrl+C or 'kill -s SIGHUP $PID_OF_shadowtunnel'
   -t int
-      connection timeout seconds (default 3)
-  -u  inbound connection is udp
-  -v  show version
+        connection timeout seconds (default 3)
+  -ttl int
+        cache seconds of dns query , if zero , default ttl used. (default 300)
+  -u    inbound connection is udp
+  -v    show version
 ```
 
 ## 示例
@@ -52,13 +70,13 @@ wget https://github.com/snail007/shadowtunnel/releases/download/v1.1/shadowtunne
 
 在 vps 上监听 :50000 并转发到 127.0.0.1:38080 ：
 
-shadowtunnel -e -f 127.0.0.1:38080 -l :50000
+`shadowtunnel -e -f 127.0.0.1:38080 -l :50000`
 
 3.在本地机器上启动一个隧道
 
 在本地机器上监听 :50000 并转发到 2.2.2.2:50000 :
 
-shadowtunnel -E -f 2.2.2.2:50000 -l :50000
+`shadowtunnel -E -f 2.2.2.2:50000 -l :50000`
 
 4.在 chrome 中设置 http 代理配置
 
@@ -104,3 +122,55 @@ ip: 127.0.0.1
 port: 50000
 
 5.完成
+
+## Deamon & Forever & Log
+
+-daemon:
+
+使用参数-daemon可以让shadowtunnel脱离当前命令行,后台运行.
+
+-forever:
+
+使用参数-forever可以让shadowtunnel以创建并监控子进程的方式运行,
+
+如果发生异常退出,会重启子进程,保证服务永远在线.
+
+-log
+
+使用参数-log可以设置日志输出到文件,而不是在命令行输出.
+
+-nolog
+
+使用参数-nolog可以从彻底关闭日志输出,节省CPU占用.
+
+一般是-daemon -forever -log /tmp/st.log 三个参数联合使用,这样出问题时,也可以通过看日志发现问题原因.
+
+实例:
+
+`shadowtunnel -u -e -f 127.0.0.1:38080 -l :50000 -p your-password -daemon -forever -log /tmp/st.log`
+
+## DNS服务
+
+shadowtunnel可以在提供本地DNS查询服务,同时具有缓存功能,可以提高解析速度.
+
+在本地启动端口转发的同时启动一个DNS服务,需要有上级配合.
+
+-dns 参数可以设置本地DNS服务监听的IP和端口,比如:0.0.0.0:5353
+
+-dns-server 参数可以设置最终用来解析域名的DNS服务器,要求是服务器必须支持TCP方式的DNS查询,默认是:8.8.8.8:53.
+
+本地实例:
+
+`shadowtunnel -E -f 2.2.2.2:50000 -l :50000  -p your-password -dns :5353 -dns-server 8.8.8.8:53`
+
+上级实例:
+
+如果上级是链式,那么链条中需要执行DNS代理的上级需要加上-dns-proxy参数.
+
+`shadowtunnel -e -f 127.0.0.1:38080 -l :50000 -p your-password -dns-proxy`
+
+## DNS缓存
+
+-ttl 参数可以设置DNS查询结果缓存时间,单位秒,如果是0,使用查询结果的ttl.
+
+-cache 参数设置DNS缓存文件位置,防止程序重启缓存消失,降低性能.

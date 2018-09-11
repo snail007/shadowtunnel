@@ -142,9 +142,16 @@ func main() {
 		//setting cache
 		cache = gocache.New(time.Second*time.Duration(dnsTTL), time.Second*60)
 		cache.LoadFile(cacheFile)
+		go func() {
+			timer := time.NewTicker(time.Second * 300)
+			for {
+				<-timer.C
+				cache.DeleteExpired()
+				cache.SaveFile(cacheFile)
+			}
+		}()
 		//start dns
 		dnsServer()
-
 	}
 	listen = srvtransport.NewServerChannelHost(listenAddr, log)
 	if inboundUDP {
@@ -171,30 +178,29 @@ func callback(conn net.Conn) {
 	}()
 	remoteAddr := conn.RemoteAddr()
 	var outconn net.Conn
-	target := ""
+	var target string
 	if dnsProxy {
-		var targetDNSServer string
-		utils.ReadPacketData(conn, &targetDNSServer)
-		if targetDNSServer == "" {
-			debugf("[warn] dns server address is empty")
+		utils.ReadPacketData(conn, &target)
+		if target == "" {
+			debugf("[warn] target is empty")
 			conn.Close()
 			return
 		}
-		outconn, err = net.DialTimeout("tcp", targetDNSServer, time.Duration(timeout)*time.Second)
-		target = targetDNSServer
-	} else {
-		if outboundUDP {
-			outconn, err = clienttransport.TOUConnectHost(forwardAddr, method, password, compress, timeout*1000)
-		} else {
-			if outboundEncrypt {
-				outconn, err = clienttransport.TCPSConnectHost(forwardAddr, method, password, compress, timeout*1000)
-			} else {
-				outconn, err = net.DialTimeout("tcp", forwardAddr, time.Duration(timeout)*time.Second)
-			}
+		if target == "_" {
+			target = forwardAddr
 		}
+	} else {
 		target = forwardAddr
 	}
-
+	if dnsProxy {
+		outconn, err = net.DialTimeout("tcp", target, time.Duration(timeout)*time.Second)
+	} else {
+		addr := ""
+		if dnsListen != "" {
+			addr = "_"
+		}
+		outconn, err = getOutconn(addr)
+	}
 	if err != nil {
 		debugf("%s <--> %s, error: %s", remoteAddr, target, err)
 		conn.Close()
@@ -332,7 +338,6 @@ func dnsServer() {
 	}()
 }
 func dnsCallback(w dns.ResponseWriter, req *dns.Msg) {
-
 	defer func() {
 		if err := recover(); err != nil {
 			debugf("dns handler crashed with err : %s \nstack: %s", err, string(debug.Stack()))
@@ -379,17 +384,7 @@ func dnsCallback(w dns.ResponseWriter, req *dns.Msg) {
 		return
 	}
 	debugf("id: %5d resolve: %v %s", id, query, dnsServerAddress)
-	var outconn net.Conn
-
-	if outboundUDP {
-		outconn, err = clienttransport.TOUConnectHost(forwardAddr, method, password, compress, timeout*1000)
-	} else {
-		if outboundEncrypt {
-			outconn, err = clienttransport.TCPSConnectHost(forwardAddr, method, password, compress, timeout*1000)
-		} else {
-			outconn, err = net.DialTimeout("tcp", forwardAddr, time.Duration(timeout)*time.Second)
-		}
-	}
+	outconn, err := getOutconn(dnsServerAddress)
 	if err != nil {
 		debugf("dns query fail,%s", err)
 		return
@@ -398,9 +393,11 @@ func dnsCallback(w dns.ResponseWriter, req *dns.Msg) {
 		outconn.Close()
 	}()
 	b, _ := req.Pack()
-	outconn.Write(utils.BuildPacketData(dnsServerAddress))
 	outconn.Write(append([]byte{0, byte(len(b))}, b...))
 	answer, _ := ioutil.ReadAll(outconn)
+	defer func() {
+		answer = nil
+	}()
 	if len(answer) < 3 {
 		debugf("dns query fail,%s", err)
 		outconn.Close()
@@ -450,4 +447,19 @@ func debugf(v ...interface{}) {
 	if isDebug {
 		log.Printf(str, v[1:]...)
 	}
+}
+func getOutconn(targetAddr string) (outconn net.Conn, err error) {
+	if outboundUDP {
+		outconn, err = clienttransport.TOUConnectHost(forwardAddr, method, password, compress, timeout*1000)
+	} else {
+		if outboundEncrypt {
+			outconn, err = clienttransport.TCPSConnectHost(forwardAddr, method, password, compress, timeout*1000)
+		} else {
+			outconn, err = net.DialTimeout("tcp", forwardAddr, time.Duration(timeout)*time.Second)
+		}
+	}
+	if targetAddr != "" {
+		outconn.Write(utils.BuildPacketData(targetAddr))
+	}
+	return
 }
