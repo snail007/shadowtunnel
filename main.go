@@ -2,24 +2,32 @@ package main
 
 import (
 	"bufio"
+	"crypto/md5"
+	"encoding/hex"
 	"flag"
 	"fmt"
+	"io/ioutil"
 	logger "log"
 	"net"
 	"os"
 	"os/exec"
 	"os/signal"
+	"path"
+	"path/filepath"
 	"runtime/debug"
 	"runtime/pprof"
 	"strings"
 	"syscall"
 	"time"
 
+	"github.com/miekg/dns"
+	gocache "github.com/pmylund/go-cache"
 	clienttransport "github.com/snail007/goproxy/core/cs/client"
 	srvtransport "github.com/snail007/goproxy/core/cs/server"
 	tou "github.com/snail007/goproxy/core/dst"
 	encryptconn "github.com/snail007/goproxy/core/lib/transport/encrypt"
 	utils "github.com/snail007/goproxy/utils"
+	jumper "github.com/snail007/goproxy/utils/jumper"
 )
 
 const (
@@ -27,20 +35,27 @@ const (
 )
 
 var (
-	listenAddr      string
-	forwardAddr     string
-	timeout         int
-	compress        bool
-	method          string
-	password        string
-	listen          srvtransport.ServerChannel
-	err             error
-	inboundEncrypt  bool
-	outboundEncrypt bool
-	inboundUDP      bool
-	outboundUDP     bool
-	version         bool
+	listenAddr       string
+	forwardAddr      string
+	timeout          int
+	compress         bool
+	method           string
+	password         string
+	listen           srvtransport.ServerChannel
+	err              error
+	inboundEncrypt   bool
+	outboundEncrypt  bool
+	inboundUDP       bool
+	outboundUDP      bool
+	version          bool
+	dnsListen        string
+	dnsServerAddress string
+	dnsProxy         bool
 
+	dnsTTL    int
+	cache     *gocache.Cache
+	cacheFile string
+	dialer    jumper.Jumper
 	//common
 	isDebug   bool
 	nolog     bool
@@ -69,6 +84,14 @@ func main() {
 	flag.BoolVar(&outboundEncrypt, "E", false, "outbound connection is encrypted")
 	flag.BoolVar(&inboundUDP, "u", false, "inbound connection is udp")
 	flag.BoolVar(&outboundUDP, "U", false, "outbound connection is udp")
+	//local
+	flag.StringVar(&dnsListen, "dns", "", "local dns server listen on address")
+	flag.StringVar(&dnsServerAddress, "dns-server", "8.8.8.8:53", "remote dns server to resolve domain")
+	//server
+	flag.BoolVar(&dnsProxy, "dns-proxy", false, "is dns endpoint or not")
+
+	flag.IntVar(&dnsTTL, "ttl", 300, "cache seconds of dns query , if zero , default ttl used.")
+	flag.StringVar(&cacheFile, "cache", filepath.Join(path.Dir(os.Args[0]), "cache.dat"), "dns query cache file path")
 	flag.BoolVar(&version, "v", false, "show version")
 
 	//common
@@ -106,6 +129,7 @@ func main() {
 		log.Fatal("inbound connection is udp , -e is required")
 		return
 	}
+	//setting log
 	tou.SetLogger(log)
 	flags := logger.Ldate
 	if isDebug {
@@ -113,6 +137,14 @@ func main() {
 		log.SetFlags(flags)
 	} else {
 		flags |= logger.Ltime
+	}
+	if dnsListen != "" {
+		//setting cache
+		cache = gocache.New(time.Second*time.Duration(dnsTTL), time.Second*60)
+		cache.LoadFile(cacheFile)
+		//start dns
+		dnsServer()
+
 	}
 	listen = srvtransport.NewServerChannelHost(listenAddr, log)
 	if inboundUDP {
@@ -127,7 +159,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	log.Printf("shadowtunnel listen on : %s", listen.Addr())
+	log.Printf("shadowtunnel listen on tcp : %s", listen.Addr())
 	cleanup()
 }
 
@@ -139,31 +171,45 @@ func callback(conn net.Conn) {
 	}()
 	remoteAddr := conn.RemoteAddr()
 	var outconn net.Conn
-	if outboundUDP {
-		outconn, err = clienttransport.TOUConnectHost(forwardAddr, method, password, compress, timeout*1000)
-
-	} else {
-		if outboundEncrypt {
-			outconn, err = clienttransport.TCPSConnectHost(forwardAddr, method, password, compress, timeout*1000)
-		} else {
-			outconn, err = net.DialTimeout("tcp", forwardAddr, time.Duration(timeout)*time.Second)
+	target := ""
+	if dnsProxy {
+		var targetDNSServer string
+		utils.ReadPacketData(conn, &targetDNSServer)
+		if targetDNSServer == "" {
+			debugf("[warn] dns server address is empty")
+			conn.Close()
+			return
 		}
+		outconn, err = net.DialTimeout("tcp", targetDNSServer, time.Duration(timeout)*time.Second)
+		target = targetDNSServer
+	} else {
+		if outboundUDP {
+			outconn, err = clienttransport.TOUConnectHost(forwardAddr, method, password, compress, timeout*1000)
+		} else {
+			if outboundEncrypt {
+				outconn, err = clienttransport.TCPSConnectHost(forwardAddr, method, password, compress, timeout*1000)
+			} else {
+				outconn, err = net.DialTimeout("tcp", forwardAddr, time.Duration(timeout)*time.Second)
+			}
+		}
+		target = forwardAddr
 	}
+
 	if err != nil {
-		log.Printf("%s <--> %s, error: %s", remoteAddr, forwardAddr, err)
+		debugf("%s <--> %s, error: %s", remoteAddr, target, err)
 		conn.Close()
 		return
 	}
 	utils.IoBind(conn, outconn, func(err interface{}) {
-		log.Printf("%s <--> %s released", remoteAddr, forwardAddr)
+		log.Printf("%s <--> %s released", remoteAddr, target)
 	}, log)
-	log.Printf("%s <--> %s connected", remoteAddr, forwardAddr)
+	log.Printf("%s <--> %s connected", remoteAddr, target)
 }
 func daemonF() {
 	if daemon {
 		args := []string{}
 		for _, arg := range os.Args[1:] {
-			if arg != "-daemon" {
+			if arg != "daemon" {
 				args = append(args, arg)
 			}
 		}
@@ -173,7 +219,7 @@ func daemonF() {
 		if forever {
 			f = "forever "
 		}
-		log.Printf("%s%s [PID] %d running...\n", f, os.Args[0], cmd.Process.Pid)
+		debugf("%s%s [PID] %d running...\n", f, os.Args[0], cmd.Process.Pid)
 		os.Exit(0)
 	}
 
@@ -181,7 +227,7 @@ func daemonF() {
 func foreverF() {
 	args := []string{}
 	for _, arg := range os.Args[1:] {
-		if arg != "-forever" {
+		if arg != "forever" {
 			args = append(args, arg)
 		}
 	}
@@ -193,12 +239,12 @@ func foreverF() {
 		cmd = exec.Command(os.Args[0], args...)
 		cmdReaderStderr, err := cmd.StderrPipe()
 		if err != nil {
-			log.Printf("ERR:%s,restarting...\n", err)
+			debugf("ERR:%s,restarting...\n", err)
 			continue
 		}
 		cmdReader, err := cmd.StdoutPipe()
 		if err != nil {
-			log.Printf("ERR:%s,restarting...\n", err)
+			debugf("ERR:%s,restarting...\n", err)
 			continue
 		}
 		scanner := bufio.NewScanner(cmdReader)
@@ -214,16 +260,16 @@ func foreverF() {
 			}
 		}()
 		if err := cmd.Start(); err != nil {
-			log.Printf("ERR:%s,restarting...\n", err)
+			debugf("ERR:%s,restarting...\n", err)
 			continue
 		}
 		pid := cmd.Process.Pid
-		log.Printf("worker %s [PID] %d running...\n", os.Args[0], pid)
+		debugf("worker %s [PID] %d running...\n", os.Args[0], pid)
 		if err := cmd.Wait(); err != nil {
-			log.Printf("ERR:%s,restarting...", err)
+			debugf("ERR:%s,restarting...", err)
 			continue
 		}
-		log.Printf("worker %s [PID] %d unexpected exited, restarting...\n", os.Args[0], pid)
+		debugf("worker %s [PID] %d unexpected exited, restarting...\n", os.Args[0], pid)
 	}
 }
 func startProfiling() {
@@ -257,7 +303,7 @@ func cleanup() {
 	go func() {
 		defer func() {
 			if e := recover(); e != nil {
-				log.Printf("clean handler crashed, err : \n%s", string(debug.Stack()))
+				debugf("clean handler crashed, err : \n%s", string(debug.Stack()))
 			}
 		}()
 		for range signalChan {
@@ -268,4 +314,140 @@ func cleanup() {
 		}
 	}()
 	<-cleanupDone
+}
+
+func dnsServer() {
+	dns.HandleFunc(".", dnsCallback)
+	go func() {
+		defer func() {
+			if e := recover(); e != nil {
+				fmt.Printf("crashed:%s", string(debug.Stack()))
+			}
+		}()
+		log.Printf("dns server listen on udp %s", dnsListen)
+		err := dns.ListenAndServe(dnsListen, "udp", nil)
+		if err != nil {
+			debugf("dns listen error: %s", err)
+		}
+	}()
+}
+func dnsCallback(w dns.ResponseWriter, req *dns.Msg) {
+
+	defer func() {
+		if err := recover(); err != nil {
+			debugf("dns handler crashed with err : %s \nstack: %s", err, string(debug.Stack()))
+		}
+	}()
+	var (
+		key       string
+		m         *dns.Msg
+		err       error
+		data      []byte
+		id        uint16
+		query     []string
+		questions []dns.Question
+	)
+	if req.MsgHdr.Response == true {
+		return
+	}
+	query = make([]string, len(req.Question))
+	for i, q := range req.Question {
+		if q.Qtype != dns.TypeAAAA {
+			questions = append(questions, q)
+		}
+		query[i] = fmt.Sprintf("(%s %s %s)", q.Name, dns.ClassToString[q.Qclass], dns.TypeToString[q.Qtype])
+	}
+
+	if len(questions) == 0 {
+		return
+	}
+
+	req.Question = questions
+	id = req.Id
+	req.Id = 0
+	key = toMd5(req.String())
+	req.Id = id
+	if reply, ok := cache.Get(key); ok {
+		data, _ = reply.([]byte)
+	}
+	if data != nil && len(data) > 0 {
+		m = &dns.Msg{}
+		m.Unpack(data)
+		m.Id = id
+		err = w.WriteMsg(m)
+		debugf("id: %5d cache: HIT %v", id, query)
+		return
+	}
+	debugf("id: %5d resolve: %v %s", id, query, dnsServerAddress)
+	var outconn net.Conn
+
+	if outboundUDP {
+		outconn, err = clienttransport.TOUConnectHost(forwardAddr, method, password, compress, timeout*1000)
+	} else {
+		if outboundEncrypt {
+			outconn, err = clienttransport.TCPSConnectHost(forwardAddr, method, password, compress, timeout*1000)
+		} else {
+			outconn, err = net.DialTimeout("tcp", forwardAddr, time.Duration(timeout)*time.Second)
+		}
+	}
+	if err != nil {
+		debugf("dns query fail,%s", err)
+		return
+	}
+	defer func() {
+		outconn.Close()
+	}()
+	b, _ := req.Pack()
+	outconn.Write(utils.BuildPacketData(dnsServerAddress))
+	outconn.Write(append([]byte{0, byte(len(b))}, b...))
+	answer, _ := ioutil.ReadAll(outconn)
+	if len(answer) < 3 {
+		debugf("dns query fail,%s", err)
+		outconn.Close()
+		return
+	}
+	m = &dns.Msg{}
+	m.Unpack(answer[2:])
+	m.Id = req.Id
+	if len(m.Answer) == 0 {
+		debugf("dns query fail,%s", err)
+		return
+	}
+	d, err := m.Pack()
+	if err != nil {
+		debugf("dns query fail,%s", err)
+		return
+	}
+	_, err = w.Write(d)
+	if err != nil {
+		debugf("dns query fail,%s", err)
+		return
+	}
+	ttl := 0
+	if len(m.Answer) > 0 {
+		if dnsTTL > 0 {
+			ttl = dnsTTL
+		} else {
+			ttl = int(m.Answer[0].Header().Ttl)
+			if ttl < 0 {
+				ttl = dnsTTL
+			}
+		}
+	}
+	cache.Set(key, answer[2:], time.Second*time.Duration(ttl))
+	log.Printf("id: %5d cache: CACHED %v TTL %v", id, query, ttl)
+}
+func toMd5(data string) string {
+	m := md5.New()
+	m.Write([]byte(data))
+	return hex.EncodeToString(m.Sum(nil))
+}
+func debugf(v ...interface{}) {
+	if nolog {
+		return
+	}
+	str := v[0].(string)
+	if isDebug {
+		log.Printf(str, v[1:]...)
+	}
 }
