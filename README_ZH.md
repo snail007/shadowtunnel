@@ -14,7 +14,7 @@ Usage of ./shadowtunnel:
   -U    outbound connection is udp
   -c    compress traffic
   -cache string
-        dns query cache file path (default "/tmp/go-build014924401/b001/exe/cache.dat")
+        dns query cache file path (default "cache.dat")
   -daemon
         daemon mode
   -debug
@@ -37,14 +37,15 @@ Usage of ./shadowtunnel:
   -m string
         method of encrypt/decrypt, these below are supported :
         aes-256-cfb,aes-128-ctr,aes-192-ctr,cast5-cfb,chacha20-ietf,rc4-md5-6,
-        chacha20,aes-128-cfb,aes-192-cfb,aes-256-ctr,des-cfb,bf-cfb,rc4-md5 
+        chacha20,aes-128-cfb,aes-192-cfb,aes-256-ctr,des-cfb,bf-cfb,rc4-md5
         (default "aes-192-cfb")
   -nolog
         turn off logging
   -p string
         password of encrypt/decrypt (default "shadowtunnel")
   -profiling
-        profiling mode, in this mode, you should stopping process by : Ctrl+C or 'kill -s SIGHUP $PID_OF_shadowtunnel'
+        profiling mode, in this mode, you should stopping process
+        by : Ctrl+C or 'kill -s SIGHUP $PID_OF_shadowtunnel'
   -t int
         connection timeout seconds (default 3)
   -ttl int
