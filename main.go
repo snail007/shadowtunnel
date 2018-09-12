@@ -223,7 +223,7 @@ func daemonF() {
 		cmd.Start()
 		f := ""
 		if forever {
-			f = "-forever "
+			f = "forever "
 		}
 		debugf("%s%s [PID] %d running...\n", f, os.Args[0], cmd.Process.Pid)
 		os.Exit(0)
