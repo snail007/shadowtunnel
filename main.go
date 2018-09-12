@@ -215,7 +215,7 @@ func daemonF() {
 	if daemon {
 		args := []string{}
 		for _, arg := range os.Args[1:] {
-			if arg != "daemon" {
+			if arg != "-daemon" {
 				args = append(args, arg)
 			}
 		}
