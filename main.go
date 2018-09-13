@@ -2,8 +2,10 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"crypto/md5"
 	"encoding/hex"
+	"errors"
 	"flag"
 	"fmt"
 	"io/ioutil"
@@ -16,9 +18,11 @@ import (
 	"path/filepath"
 	"runtime/debug"
 	"runtime/pprof"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
+	"unsafe"
 
 	"github.com/miekg/dns"
 	gocache "github.com/pmylund/go-cache"
@@ -56,6 +60,9 @@ var (
 	cache     *gocache.Cache
 	cacheFile string
 	dialer    jumper.Jumper
+
+	redir bool
+
 	//common
 	isDebug   bool
 	nolog     bool
@@ -84,6 +91,7 @@ func main() {
 	flag.BoolVar(&outboundEncrypt, "E", false, "outbound connection is encrypted")
 	flag.BoolVar(&inboundUDP, "u", false, "inbound connection is udp")
 	flag.BoolVar(&outboundUDP, "U", false, "outbound connection is udp")
+	flag.BoolVar(&redir, "redir", false, "read target from socket's redirect opts of iptables")
 	//local
 	flag.StringVar(&dnsListen, "dns", "", "local dns server listen on address")
 	flag.StringVar(&dnsServerAddress, "dns-server", "8.8.8.8:53", "remote dns server to resolve domain")
@@ -173,7 +181,7 @@ func main() {
 func callback(conn net.Conn) {
 	defer func() {
 		if e := recover(); e != nil {
-			log.Printf("connection handler crashed :\n%s", err)
+			debugf("callback handler crashed, err : \n%s", string(debug.Stack()))
 		}
 	}()
 	remoteAddr := conn.RemoteAddr()
@@ -186,20 +194,70 @@ func callback(conn net.Conn) {
 			conn.Close()
 			return
 		}
-		if target == "_" {
-			target = forwardAddr
-		}
 	} else {
 		target = forwardAddr
 	}
-	if dnsProxy {
+	if dnsProxy && target != "_" {
 		outconn, err = net.DialTimeout("tcp", target, time.Duration(timeout)*time.Second)
 	} else {
+		if target == "_" {
+			target = forwardAddr
+		}
 		addr := ""
+		realAddress := ""
 		if dnsListen != "" {
 			addr = "_"
 		}
+		if redir {
+			realAddress, err = realServerAddress(&conn)
+			if err != nil {
+				debugf("%s <--> %s, error: %s", remoteAddr, target, err)
+				conn.Close()
+				return
+			}
+		}
 		outconn, err = getOutconn(addr)
+		if err == nil && redir {
+			//debugf("real address %s", realAddress)
+			pb := new(bytes.Buffer)
+			pb.Write([]byte(fmt.Sprintf("CONNECT %s HTTP/1.1\r\n", realAddress)))
+			pb.WriteString(fmt.Sprintf("Host: %s\r\n", realAddress))
+			pb.WriteString(fmt.Sprintf("Proxy-Host: %s\r\n", realAddress))
+			pb.WriteString("Proxy-Connection: Keep-Alive\r\n")
+			pb.WriteString("Connection: Keep-Alive\r\n")
+			pb.Write([]byte("\r\n"))
+			_, err = outconn.Write(pb.Bytes())
+			pb.Reset()
+			pb = nil
+			if err != nil {
+				outconn.Close()
+				conn.Close()
+				conn = nil
+				outconn = nil
+				err = fmt.Errorf("error connecting to proxy: %s", err)
+				return
+			}
+			reply := make([]byte, 1024)
+			outconn.SetReadDeadline(time.Now().Add(time.Second * 5))
+			n, err := outconn.Read(reply)
+			outconn.SetReadDeadline(time.Time{})
+			if err != nil {
+				err = fmt.Errorf("error read reply from proxy: %s", err)
+				outconn.Close()
+				conn.Close()
+				conn = nil
+				outconn = nil
+				return
+			}
+			if bytes.Index(reply[:n], []byte("200")) == -1 {
+				err = fmt.Errorf("error greeting to proxy, response: %s", string(reply[:n]))
+				outconn.Close()
+				conn.Close()
+				conn = nil
+				outconn = nil
+				return
+			}
+		}
 	}
 	if err != nil {
 		debugf("%s <--> %s, error: %s", remoteAddr, target, err)
@@ -228,7 +286,6 @@ func daemonF() {
 		debugf("%s%s [PID] %d running...\n", f, os.Args[0], cmd.Process.Pid)
 		os.Exit(0)
 	}
-
 }
 func foreverF() {
 	args := []string{}
@@ -327,7 +384,7 @@ func dnsServer() {
 	go func() {
 		defer func() {
 			if e := recover(); e != nil {
-				fmt.Printf("crashed:%s", string(debug.Stack()))
+				debugf("callback handler crashed, err : \n%s", string(debug.Stack()))
 			}
 		}()
 		log.Printf("dns server listen on udp %s", dnsListen)
@@ -460,6 +517,63 @@ func getOutconn(targetAddr string) (outconn net.Conn, err error) {
 	}
 	if targetAddr != "" {
 		outconn.Write(utils.BuildPacketData(targetAddr))
+	}
+	return
+}
+
+type sockaddr struct {
+	family uint16
+	data   [14]byte
+}
+
+const SO_ORIGINAL_DST = 80
+
+//realServerAddress returns an intercepted connection's original destination.
+func realServerAddress(conn *net.Conn) (string, error) {
+	tcpConn, ok := (*conn).(*net.TCPConn)
+	if !ok {
+		return "", errors.New("not a TCPConn")
+	}
+
+	file, err := tcpConn.File()
+	if err != nil {
+		return "", err
+	}
+
+	// To avoid potential problems from making the socket non-blocking.
+	tcpConn.Close()
+	*conn, err = net.FileConn(file)
+	if err != nil {
+		return "", err
+	}
+
+	defer file.Close()
+	fd := file.Fd()
+
+	var addr sockaddr
+	size := uint32(unsafe.Sizeof(addr))
+	err = getsockopt(int(fd), syscall.SOL_IP, SO_ORIGINAL_DST, uintptr(unsafe.Pointer(&addr)), &size)
+	if err != nil {
+		return "", err
+	}
+
+	var ip net.IP
+	switch addr.family {
+	case syscall.AF_INET:
+		ip = addr.data[2:6]
+	default:
+		return "", errors.New("unrecognized address family")
+	}
+
+	port := int(addr.data[0])<<8 + int(addr.data[1])
+
+	return net.JoinHostPort(ip.String(), strconv.Itoa(port)), nil
+}
+
+func getsockopt(s int, level int, name int, val uintptr, vallen *uint32) (err error) {
+	_, _, e1 := syscall.Syscall6(syscall.SYS_GETSOCKOPT, uintptr(s), uintptr(level), uintptr(name), uintptr(val), uintptr(unsafe.Pointer(vallen)), 0)
+	if e1 != 0 {
+		err = e1
 	}
 	return
 }
