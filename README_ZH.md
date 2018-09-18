@@ -210,7 +210,7 @@ shadowtunnel可以在提供本地DNS查询服务,同时具有缓存功能,可以
 
 ### 设置权重  
 
-`shadowtunnel -E -f 2.2.2.2:50000@2 -f 3.3.3.3:50000@1 -l :50000 -lb-method leastconn -lb-retrytime 300 -lb-timeout 300`
+`shadowtunnel -E -f 2.2.2.2:50000@2 -f 3.3.3.3:50000@1 -l :50000 -lb-method weight -lb-retrytime 300 -lb-timeout 300`
 
 ### 使用目标地址选择上级
 
