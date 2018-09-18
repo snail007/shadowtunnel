@@ -32,15 +32,27 @@ import (
 	encryptconn "github.com/snail007/goproxy/core/lib/transport/encrypt"
 	utils "github.com/snail007/goproxy/utils"
 	jumper "github.com/snail007/goproxy/utils/jumper"
+	lbx "github.com/snail007/goproxy/utils/lb"
 )
 
 const (
 	VERSION = "1.2"
 )
 
+type forwarders []string
+
+func (i *forwarders) String() string {
+	return strings.Join(*i, ",")
+}
+
+func (i *forwarders) Set(value string) error {
+	*i = append(*i, value)
+	return nil
+}
+
 var (
 	listenAddr       string
-	forwardAddr      string
+	forwardsAddr     forwarders
 	timeout          int
 	compress         bool
 	method           string
@@ -63,6 +75,16 @@ var (
 
 	redir bool
 
+	//LoadBalance
+	lb                       lbx.Group
+	loadBalanceMethod        string
+	loadBalanceTimeout       int
+	loadBalanceRetryTime     int
+	loadBalanceHashTarget    bool
+	loadBalanceOnlyHA        bool
+	loadBalanceActiveAfter   int
+	loadBalanceInactiveAfter int
+
 	//common
 	isDebug   bool
 	nolog     bool
@@ -84,7 +106,7 @@ func main() {
 	flag.StringVar(&listenAddr, "l", ":50000", "local listen address, such as : 0.0.0.0:33000")
 	flag.StringVar(&method, "m", "aes-192-cfb", "method of encrypt/decrypt, these below are supported :\n"+strings.Join(encryptconn.GetCipherMethods(), ","))
 	flag.StringVar(&password, "p", "shadowtunnel", "password of encrypt/decrypt")
-	flag.StringVar(&forwardAddr, "f", "", "forward address,such as : 127.0.0.1:8080")
+	flag.Var(&forwardsAddr, "f", "forward address,such as : 127.0.0.1:8080 or with @`weight`: 127.0.0.1:8080@1")
 	flag.IntVar(&timeout, "t", 3, "connection timeout seconds")
 	flag.BoolVar(&compress, "c", false, "compress traffic")
 	flag.BoolVar(&inboundEncrypt, "e", false, "inbound connection is encrypted")
@@ -101,6 +123,14 @@ func main() {
 	flag.IntVar(&dnsTTL, "ttl", 300, "cache seconds of dns query , if zero , default ttl used.")
 	flag.StringVar(&cacheFile, "cache", filepath.Join(path.Dir(os.Args[0]), "cache.dat"), "dns query cache file path")
 	flag.BoolVar(&version, "v", false, "show version")
+	//lb
+	flag.StringVar(&loadBalanceMethod, "lb-method", "leasttime", "load balance method when use multiple parent,can be <roundrobin|leastconn|leasttime|hash|weight>")
+	flag.IntVar(&loadBalanceRetryTime, "lb-retrytime", 2000, "sleep time milliseconds after checking")
+	flag.IntVar(&loadBalanceTimeout, "lb-timeout", 3000, "tcp milliseconds timeout of connecting to parent")
+	flag.BoolVar(&loadBalanceHashTarget, "lb-hashtarget", true, "use target address to choose parent for LB, only worked for LB's `hash` method and using `-redir`")
+	flag.BoolVar(&loadBalanceOnlyHA, "lb-onlyha", false, "use only `high availability mode` to choose parent for LB")
+	flag.IntVar(&loadBalanceActiveAfter, "lb-activeafter", 1, "host going actived after this success count")
+	flag.IntVar(&loadBalanceInactiveAfter, "lb-inactiveafter", 2, "host going inactived after this fail count")
 
 	//common
 	flag.BoolVar(&nolog, "nolog", false, "turn off logging")
@@ -114,7 +144,7 @@ func main() {
 		fmt.Println(VERSION)
 		return
 	}
-	if forwardAddr == "" || listenAddr == "" {
+	if len(forwardsAddr) == 0 || listenAddr == "" {
 		flag.Usage()
 		return
 	}
@@ -137,6 +167,8 @@ func main() {
 		log.Fatal("inbound connection is udp , -e is required")
 		return
 	}
+	//setting lb
+	initLB()
 	//setting log
 	tou.SetLogger(log)
 	flags := logger.Ldate
@@ -195,13 +227,13 @@ func callback(conn net.Conn) {
 			return
 		}
 	} else {
-		target = forwardAddr
+		target = lb.Select("", loadBalanceOnlyHA)
 	}
 	if dnsProxy && target != "_" {
 		outconn, err = net.DialTimeout("tcp", target, time.Duration(timeout)*time.Second)
 	} else {
 		if target == "_" {
-			target = forwardAddr
+			target = lb.Select("", loadBalanceOnlyHA)
 		}
 		addr := ""
 		realAddress := ""
@@ -216,7 +248,7 @@ func callback(conn net.Conn) {
 				return
 			}
 		}
-		outconn, err = getOutconn(addr)
+		outconn, err = getOutconn(lb.Select(realAddress, loadBalanceOnlyHA), addr)
 		if err == nil && redir {
 			//debugf("real address %s", realAddress)
 			pb := new(bytes.Buffer)
@@ -441,9 +473,9 @@ func dnsCallback(w dns.ResponseWriter, req *dns.Msg) {
 		return
 	}
 	debugf("id: %5d resolve: %v %s", id, query, dnsServerAddress)
-	outconn, err := getOutconn(dnsServerAddress)
+	outconn, err := getOutconn(lb.Select("", loadBalanceOnlyHA), dnsServerAddress)
 	if err != nil {
-		debugf("dns query fail,%s", err)
+		debugf("dns query fail, %s", err)
 		return
 	}
 	defer func() {
@@ -456,7 +488,7 @@ func dnsCallback(w dns.ResponseWriter, req *dns.Msg) {
 		answer = nil
 	}()
 	if len(answer) < 3 {
-		debugf("dns query fail,%s", err)
+		debugf("dns query fail, bad response")
 		outconn.Close()
 		return
 	}
@@ -464,7 +496,7 @@ func dnsCallback(w dns.ResponseWriter, req *dns.Msg) {
 	m.Unpack(answer[2:])
 	m.Id = req.Id
 	if len(m.Answer) == 0 {
-		debugf("dns query fail,%s", err)
+		debugf("dns query fail, no answer")
 		return
 	}
 	d, err := m.Pack()
@@ -505,17 +537,17 @@ func debugf(v ...interface{}) {
 		log.Printf(str, v[1:]...)
 	}
 }
-func getOutconn(targetAddr string) (outconn net.Conn, err error) {
+func getOutconn(lbAddr, targetAddr string) (outconn net.Conn, err error) {
 	if outboundUDP {
-		outconn, err = clienttransport.TOUConnectHost(forwardAddr, method, password, compress, timeout*1000)
+		outconn, err = clienttransport.TOUConnectHost(lbAddr, method, password, compress, timeout*1000)
 	} else {
 		if outboundEncrypt {
-			outconn, err = clienttransport.TCPSConnectHost(forwardAddr, method, password, compress, timeout*1000)
+			outconn, err = clienttransport.TCPSConnectHost(lbAddr, method, password, compress, timeout*1000)
 		} else {
-			outconn, err = net.DialTimeout("tcp", forwardAddr, time.Duration(timeout)*time.Second)
+			outconn, err = net.DialTimeout("tcp", lbAddr, time.Duration(timeout)*time.Second)
 		}
 	}
-	if targetAddr != "" {
+	if err == nil && targetAddr != "" {
 		outconn.Write(utils.BuildPacketData(targetAddr))
 	}
 	return
@@ -576,4 +608,24 @@ func getsockopt(s int, level int, name int, val uintptr, vallen *uint32) (err er
 		err = e1
 	}
 	return
+}
+func initLB() {
+	configs := lbx.BackendsConfig{}
+	for _, addr := range forwardsAddr {
+		_addrInfo := strings.Split(addr, "@")
+		_addr := _addrInfo[0]
+		weight := 1
+		if len(_addrInfo) == 2 {
+			weight, _ = strconv.Atoi(_addrInfo[1])
+		}
+		configs = append(configs, &lbx.BackendConfig{
+			Address:       _addr,
+			Weight:        weight,
+			ActiveAfter:   loadBalanceActiveAfter,
+			InactiveAfter: loadBalanceInactiveAfter,
+			Timeout:       time.Duration(loadBalanceTimeout) * time.Millisecond,
+			RetryTime:     time.Duration(loadBalanceRetryTime) * time.Millisecond,
+		})
+	}
+	lb = lbx.NewGroup(utils.LBMethod(loadBalanceMethod), configs, nil, log, isDebug)
 }
