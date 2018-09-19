@@ -213,7 +213,7 @@ func main() {
 func callback(conn net.Conn) {
 	defer func() {
 		if e := recover(); e != nil {
-			debugf("callback handler crashed, err : \n%s", string(debug.Stack()))
+			debugf("callback handler crashed, err : %s\nstack:%s", e, string(debug.Stack()))
 		}
 	}()
 	remoteAddr := conn.RemoteAddr()
@@ -222,7 +222,7 @@ func callback(conn net.Conn) {
 	if dnsProxy {
 		utils.ReadPacketData(conn, &target)
 		if target == "" {
-			debugf("[warn] target is empty")
+			//debugf("[warn] target is empty")
 			conn.Close()
 			return
 		}
@@ -416,7 +416,7 @@ func dnsServer() {
 	go func() {
 		defer func() {
 			if e := recover(); e != nil {
-				debugf("callback handler crashed, err : \n%s", string(debug.Stack()))
+				debugf("callback handler crashed, err : %s\nstack:%s", e, string(debug.Stack()))
 			}
 		}()
 		log.Printf("dns server listen on udp %s", dnsListen)
@@ -472,8 +472,9 @@ func dnsCallback(w dns.ResponseWriter, req *dns.Msg) {
 		debugf("id: %5d cache: HIT %v", id, query)
 		return
 	}
-	debugf("id: %5d resolve: %v %s", id, query, dnsServerAddress)
-	outconn, err := getOutconn(lb.Select("", loadBalanceOnlyHA), dnsServerAddress)
+	lbAddr := lb.Select("", loadBalanceOnlyHA)
+	debugf("id: %5d resolve: %v %s %s", id, query, lbAddr, dnsServerAddress)
+	outconn, err := getOutconn(lbAddr, dnsServerAddress)
 	if err != nil {
 		debugf("dns query fail, %s", err)
 		return
@@ -627,5 +628,5 @@ func initLB() {
 			RetryTime:     time.Duration(loadBalanceRetryTime) * time.Millisecond,
 		})
 	}
-	lb = lbx.NewGroup(utils.LBMethod(loadBalanceMethod), configs, nil, log, isDebug)
+	lb = lbx.NewGroup(utils.LBMethod(loadBalanceMethod), configs, nil, log, false)
 }
