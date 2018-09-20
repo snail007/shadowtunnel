@@ -1,5 +1,7 @@
 # shadowtunnel
 
+## [中文手册](/README_ZH.md)
+
 ## About
 
 Secure tunnel which help you protecting your tcp traffic between your machine and your service on remote.
