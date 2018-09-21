@@ -23,6 +23,8 @@ Usage of ./shadowtunnel:
         show debug info
   -dns string
         local dns server listen on address
+  -dns-hosts string
+        path of dns hosts file
   -dns-proxy
         is dns endpoint or not
   -dns-server string
