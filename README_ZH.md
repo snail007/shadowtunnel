@@ -215,3 +215,9 @@ shadowtunnel可以在提供本地DNS查询服务,同时具有缓存功能,可以
 ### 使用目标地址选择上级
 
 `shadowtunnel -E -f 2.2.2.2:50000@2 -f 3.3.3.3:50000@1 -l :50000 -lb-method hash -lb-hashtarget -lb-retrytime 300 -lb-timeout 300`
+
+## DNS HOSTS文件
+
+-dns-hosts参数可以设置DNS解析的时候使用的hosts文件,内容和系统的hosts文件内容格式相同.
+
+`shadowtunnel -f 2.2.2.2:50000 -dns :5353 -dns-hosts /etc/hosts`

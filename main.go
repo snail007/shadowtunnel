@@ -72,7 +72,9 @@ var (
 	cacheFile string
 	dialer    jumper.Jumper
 
-	redir bool
+	hosts    string
+	dnsHosts = map[string]string{}
+	redir    bool
 
 	//LoadBalance
 	lb                       lbx.Group
@@ -112,6 +114,7 @@ func main() {
 	flag.BoolVar(&outboundEncrypt, "E", false, "outbound connection is encrypted")
 	flag.BoolVar(&inboundUDP, "u", false, "inbound connection is udp")
 	flag.BoolVar(&outboundUDP, "U", false, "outbound connection is udp")
+	flag.StringVar(&hosts, "dns-hosts", "", "path of dns hosts file")
 	flag.BoolVar(&redir, "redir", false, "read target from socket's redirect opts of iptables")
 	//local
 	flag.StringVar(&dnsListen, "dns", "", "local dns server listen on address")
@@ -190,6 +193,7 @@ func main() {
 			}
 		}()
 		//start dns
+		initDnsHosts()
 		dnsServer()
 	}
 	listen = srvtransport.NewServerChannelHost(listenAddr, log)
@@ -409,7 +413,34 @@ func cleanup() {
 	}()
 	<-cleanupDone
 }
-
+func initDnsHosts() {
+	if hosts == "" {
+		return
+	}
+	if utils.PathExists(hosts) {
+		_content, err := ioutil.ReadFile(hosts)
+		if err != nil {
+			return
+		}
+		dnsHostArr := strings.Split(strings.Replace(string(_content), "\r", "", -1), "\n")
+		n := 0
+		for _, dnsHost := range dnsHostArr {
+			if strings.HasPrefix(dnsHost, "#") {
+				continue
+			}
+			u := strings.Fields(strings.Trim(dnsHost, " "))
+			if len(u) == 2 {
+				dnsHosts[u[1]+"."] = u[0]
+				n++
+			}
+		}
+		if n > 0 {
+			debugf("hosts file %s loaded, %d", hosts, n)
+		}
+	} else {
+		panic(fmt.Errorf("host file not found , %s", hosts))
+	}
+}
 func dnsServer() {
 	dns.HandleFunc(".", dnsCallback)
 	go func() {
@@ -444,6 +475,7 @@ func dnsCallback(w dns.ResponseWriter, req *dns.Msg) {
 		return
 	}
 	query = make([]string, len(req.Question))
+
 	for i, q := range req.Question {
 		if q.Qtype != dns.TypeAAAA {
 			questions = append(questions, q)
@@ -460,6 +492,24 @@ func dnsCallback(w dns.ResponseWriter, req *dns.Msg) {
 	req.Id = 0
 	key = toMd5(req.String())
 	req.Id = id
+	//hosts
+	for _, q := range req.Question {
+		if q.Qtype == dns.TypeA {
+			//log.Printf("q.Name %s %v", q.Name, dnsHosts)
+			if v, ok := dnsHosts[q.Name]; ok {
+				m := new(dns.Msg)
+				m.SetReply(req)
+				m.Compress = false
+				m.Answer = []dns.RR{}
+				rr, _ := dns.NewRR(fmt.Sprintf("%s A %s", q.Name, v))
+				m.Answer = append(m.Answer, rr)
+				w.WriteMsg(m)
+				debugf("id: %5d hosts: HIT %v", id, query)
+				return
+			}
+		}
+	}
+
 	if reply, ok := cache.Get(key); ok {
 		data, _ = reply.([]byte)
 	}
