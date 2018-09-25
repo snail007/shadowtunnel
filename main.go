@@ -158,6 +158,9 @@ func main() {
 		foreverF()
 		return
 	}
+	if nolog {
+		log.SetOutput(ioutil.Discard)
+	}
 	if profiling {
 		startProfiling()
 	}
@@ -509,7 +512,7 @@ func dnsCallback(w dns.ResponseWriter, req *dns.Msg) {
 			}
 		}
 	}
-
+	//cache
 	if reply, ok := cache.Get(key); ok {
 		data, _ = reply.([]byte)
 	}
