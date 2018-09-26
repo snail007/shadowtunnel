@@ -76,7 +76,7 @@ Usage of ./shadowtunnel:
   -v    show version
 ```
 
-## 示例
+## for example
 
 1.http proxy
 
@@ -114,7 +114,7 @@ port: 50000
 
 ## TCP over UDP
 
-1.http 代理
+1.http proxy
 
 if we have a vps, IP is 2.2.2.2.   
 
