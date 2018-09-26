@@ -212,7 +212,11 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	log.Printf("shadowtunnel listen on tcp : %s", listen.Addr())
+	typ := "tcp"
+	if inboundUDP {
+		typ = "udp"
+	}
+	log.Printf("shadowtunnel listen on %s : %s", typ, listen.Addr())
 	cleanup()
 }
 
