@@ -220,6 +220,6 @@ Support superior load balancing, repeat -f parameters if exist multiple superior
 
 ## DNS HOSTS DOCUMENT
 
-The - DNS - hosts parameter sets the hosts file to be used when DNS is parsed, with the same content format as the system's hosts file.
+The -dns- hosts parameter sets the hosts file to be used when DNS is parsed, with the same content format as the system's hosts file.
 
 `shadowtunnel -f 2.2.2.2:50000 -dns :5353 -dns-hosts /etc/hosts`
