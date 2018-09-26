@@ -218,7 +218,7 @@ Support superior load balancing, repeat -f parameters if exist multiple superior
 
 `shadowtunnel -E -f 2.2.2.2:50000@2 -f 3.3.3.3:50000@1 -l :50000 -lb-method hash -lb-hashtarget -lb-retrytime 300 -lb-timeout 300`
 
-## DNS HOSTS DOCUMENT
+## DNS HOSTS
 
 The -dns- hosts parameter sets the hosts file to be used when DNS is parsed, with the same content format as the system's hosts file.
 
