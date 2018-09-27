@@ -1,4 +1,9 @@
 shadowtunnel更新日志
+v1.3
+1.新增-dns-hosts参数,对hosts文件支持.
+2.新增-dns-forward域名列表转发解析支持,可以指定通配符域名使用指定的DNS服务器解析.
+
+
 v1.2
 1.新增了-daemon参数,后台运行功能.
 2.新增了-forever参数,永久运行功能,异常退出会自己重启.

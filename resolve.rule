@@ -1,0 +1,7 @@
+#support wildcard and comment line stared with #
+# **.google.com match all domain subfix with .google.com
+# *.youtube.com only math level 3 sub domain of .youtube.com
+
+**.google.com 8.8.8.8:53
+*.youtube.com 8.8.8.8:53
+

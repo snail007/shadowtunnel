@@ -1,5 +1,5 @@
 #!/bin/bash
-VER="1.2"
+VER="1.3"
 RELEASE="release-${VER}"
 TRIMPATH1="/Users/snail/go/src/github.com/snail007"
 TRIMPATH=$(dirname ~/go/src/github.com/snail007)/snail007
@@ -75,6 +75,3 @@ CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -o shadowtunnel.exe && tar zcfv
 
 rm -rf shadowtunnel shadowtunnel.exe shadowtunnel-noconsole.exe
 
-#todo
-#1.release.sh        VER="xxx"
-#2.main.go           APP_VERSION="xxx"

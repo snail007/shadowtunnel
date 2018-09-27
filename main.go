@@ -22,6 +22,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/gobwas/glob"
 	"github.com/miekg/dns"
 	gocache "github.com/pmylund/go-cache"
 	clienttransport "github.com/snail007/goproxy/core/cs/client"
@@ -72,9 +73,11 @@ var (
 	cacheFile string
 	dialer    jumper.Jumper
 
-	hosts    string
-	dnsHosts = map[string]string{}
-	redir    bool
+	hosts          string
+	dnsHosts       = map[string]string{}
+	dnsForwardFile string
+	dnsForward     = map[string]string{}
+	redir          bool
 
 	//LoadBalance
 	lb                       lbx.Group
@@ -115,6 +118,7 @@ func main() {
 	flag.BoolVar(&inboundUDP, "u", false, "inbound connection is udp")
 	flag.BoolVar(&outboundUDP, "U", false, "outbound connection is udp")
 	flag.StringVar(&hosts, "dns-hosts", "", "path of dns hosts file")
+	flag.StringVar(&dnsForwardFile, "dns-forward", "", "rule file of resolving domain")
 	flag.BoolVar(&redir, "redir", false, "read target from socket's redirect opts of iptables")
 	//local
 	flag.StringVar(&dnsListen, "dns", "", "local dns server listen on address")
@@ -196,7 +200,8 @@ func main() {
 			}
 		}()
 		//start dns
-		initDnsHosts()
+		initDnsHosts(hosts, &dnsHosts, ".")
+		initDnsHosts(dnsForwardFile, &dnsForward, "")
 		dnsServer()
 	}
 	listen = srvtransport.NewServerChannelHost(listenAddr, log)
@@ -420,7 +425,8 @@ func cleanup() {
 	}()
 	<-cleanupDone
 }
-func initDnsHosts() {
+func initDnsHosts(file string, dnsHosts *map[string]string, subfix string) {
+	hosts := file
 	if hosts == "" {
 		return
 	}
@@ -437,7 +443,11 @@ func initDnsHosts() {
 			}
 			u := strings.Fields(strings.Trim(dnsHost, " "))
 			if len(u) == 2 {
-				dnsHosts[u[1]+"."] = u[0]
+				if subfix != "" {
+					(*dnsHosts)[u[1]+subfix] = u[0]
+				} else {
+					(*dnsHosts)[u[0]] = u[1]
+				}
 				n++
 			}
 		}
@@ -516,6 +526,7 @@ func dnsCallback(w dns.ResponseWriter, req *dns.Msg) {
 			}
 		}
 	}
+
 	//cache
 	if reply, ok := cache.Get(key); ok {
 		data, _ = reply.([]byte)
@@ -528,29 +539,65 @@ func dnsCallback(w dns.ResponseWriter, req *dns.Msg) {
 		debugf("id: %5d cache: HIT %v", id, query)
 		return
 	}
-	lbAddr := lb.Select("", loadBalanceOnlyHA)
-	debugf("id: %5d resolve: %v %s %s", id, query, lbAddr, dnsServerAddress)
-	outconn, err := getOutconn(lbAddr, dnsServerAddress)
-	if err != nil {
-		debugf("dns query fail, %s", err)
-		return
+
+	//resolve
+	answer := []byte{}
+
+	//forward resovle
+	for _, q := range req.Question {
+		if q.Qtype == dns.TypeA {
+			domain := strings.TrimRight(q.Name, ".")
+			for k, v := range dnsForward {
+				if strings.Index(v, ":") == -1 {
+					v = v + ":53"
+				}
+				g := glob.MustCompile(k, '.')
+				debugf("%s -> %s : %v", k, v, g.Match(domain))
+				if g.Match(domain) {
+					c := new(dns.Client)
+					c.Dialer = &net.Dialer{
+						Timeout: time.Duration(timeout) * time.Millisecond,
+					}
+					debugf("use %s relsove %s", v, domain)
+					m, _, err := c.Exchange(req, v)
+					if err != nil {
+						debugf(err)
+					} else {
+						answer, _ = m.Pack()
+					}
+					break
+				}
+			}
+		}
 	}
-	defer func() {
-		outconn.Close()
-	}()
-	b, _ := req.Pack()
-	outconn.Write(append([]byte{0, byte(len(b))}, b...))
-	answer, _ := ioutil.ReadAll(outconn)
+	//nonforward resovle, use parent resovle
+	if len(answer) == 0 {
+		//use parent resolve
+		lbAddr := lb.Select("", loadBalanceOnlyHA)
+		debugf("id: %5d resolve: %v %s %s", id, query, lbAddr, dnsServerAddress)
+		outconn, err := getOutconn(lbAddr, dnsServerAddress)
+		if err != nil {
+			debugf("dns query fail, %s", err)
+			return
+		}
+		defer func() {
+			outconn.Close()
+		}()
+		b, _ := req.Pack()
+		outconn.Write(append([]byte{0, byte(len(b))}, b...))
+		answer, _ = ioutil.ReadAll(outconn)
+		if len(answer) < 3 {
+			debugf("dns query fail, bad response")
+			outconn.Close()
+			return
+		}
+		answer = answer[2:]
+	}
 	defer func() {
 		answer = nil
 	}()
-	if len(answer) < 3 {
-		debugf("dns query fail, bad response")
-		outconn.Close()
-		return
-	}
 	m = &dns.Msg{}
-	m.Unpack(answer[2:])
+	m.Unpack(answer)
 	m.Id = req.Id
 	if len(m.Answer) == 0 {
 		debugf("dns query fail, no answer")
@@ -577,7 +624,7 @@ func dnsCallback(w dns.ResponseWriter, req *dns.Msg) {
 			}
 		}
 	}
-	cache.Set(key, answer[2:], time.Second*time.Duration(ttl))
+	cache.Set(key, answer, time.Second*time.Duration(ttl))
 	log.Printf("id: %5d cache: CACHED %v TTL %v", id, query, ttl)
 }
 func toMd5(data string) string {
