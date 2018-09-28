@@ -552,7 +552,7 @@ func dnsCallback(w dns.ResponseWriter, req *dns.Msg) {
 					v = v + ":53"
 				}
 				g := glob.MustCompile(k, '.')
-				debugf("%s -> %s : %v", k, v, g.Match(domain))
+				//debugf("%s -> %s : %v", k, v, g.Match(domain))
 				if g.Match(domain) {
 					c := new(dns.Client)
 					c.Dialer = &net.Dialer{
