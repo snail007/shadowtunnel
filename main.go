@@ -22,6 +22,8 @@ import (
 	"syscall"
 	"time"
 
+	"sync"
+
 	"github.com/gobwas/glob"
 	"github.com/miekg/dns"
 	gocache "github.com/pmylund/go-cache"
@@ -36,7 +38,7 @@ import (
 )
 
 const (
-	VERSION = "1.2"
+	VERSION = "1.4"
 )
 
 type forwarders []string
@@ -103,6 +105,8 @@ var (
 	blockProfilingFile,
 	goroutineProfilingFile,
 	threadcreateProfilingFile *os.File
+
+	dnsGlobCache = sync.Map{}
 )
 
 func main() {
@@ -546,26 +550,38 @@ func dnsCallback(w dns.ResponseWriter, req *dns.Msg) {
 	//forward resovle
 	for _, q := range req.Question {
 		if q.Qtype == dns.TypeA {
+			dnsAddr := ""
 			domain := strings.TrimRight(q.Name, ".")
-			for k, v := range dnsForward {
-				if strings.Index(v, ":") == -1 {
-					v = v + ":53"
+			if _d, ok := dnsGlobCache.Load(domain); ok {
+				dnsAddr = _d.(string)
+			} else {
+				for k, v := range dnsForward {
+					if strings.Index(v, ":") == -1 {
+						v = v + ":53"
+					}
+					g := glob.MustCompile(k, '.')
+					//debugf("%s -> %s : %v", k, v, g.Match(domain))
+					if g.Match(domain) {
+						dnsAddr = v
+						break
+					}
 				}
-				g := glob.MustCompile(k, '.')
-				//debugf("%s -> %s : %v", k, v, g.Match(domain))
-				if g.Match(domain) {
-					c := new(dns.Client)
-					c.Dialer = &net.Dialer{
-						Timeout: time.Duration(timeout) * time.Millisecond,
-					}
-					debugf("use %s relsove %s", v, domain)
-					m, _, err := c.Exchange(req, v)
-					if err != nil {
-						debugf(err)
-					} else {
-						answer, _ = m.Pack()
-					}
-					break
+			}
+
+			if dnsAddr != "" {
+				if _, ok := dnsGlobCache.Load(domain); !ok {
+					dnsGlobCache.Store(domain, dnsAddr)
+				}
+				c := new(dns.Client)
+				c.Dialer = &net.Dialer{
+					Timeout: time.Duration(timeout) * time.Millisecond,
+				}
+				debugf("use %s relsove %s", dnsAddr, domain)
+				m, _, err := c.Exchange(req, dnsAddr)
+				if err != nil {
+					debugf(err)
+				} else {
+					answer, _ = m.Pack()
 				}
 			}
 		}
