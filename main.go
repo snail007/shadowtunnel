@@ -38,7 +38,7 @@ import (
 )
 
 const (
-	VERSION = "1.4"
+	VERSION = "1.5"
 )
 
 type forwarders []string
@@ -441,18 +441,29 @@ func initDnsHosts(file string, dnsHosts *map[string]string, subfix string) {
 		}
 		dnsHostArr := strings.Split(strings.Replace(string(_content), "\r", "", -1), "\n")
 		n := 0
+		last := ""
 		for _, dnsHost := range dnsHostArr {
+			dnsHost = strings.Trim(dnsHost, " \t")
 			if strings.HasPrefix(dnsHost, "#") {
 				continue
 			}
 			u := strings.Fields(strings.Trim(dnsHost, " "))
-			if len(u) == 2 {
-				if subfix != "" {
+			if subfix != "" {
+				//hosts
+				if len(u) == 2 {
 					(*dnsHosts)[u[1]+subfix] = u[0]
-				} else {
-					(*dnsHosts)[u[0]] = u[1]
+					n++
 				}
-				n++
+			} else {
+				//dns forward
+				if len(u) == 2 && u[1] != "" {
+					(*dnsHosts)[u[0]] = u[1]
+					last = u[1]
+					n++
+				} else if len(u) > 0 {
+					(*dnsHosts)[u[0]] = last
+					n++
+				}
 			}
 		}
 		if n > 0 {

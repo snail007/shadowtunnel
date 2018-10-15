@@ -4,4 +4,8 @@
 
 **.google.com 8.8.8.8:53
 *.youtube.com 8.8.8.8:53
-
+a.com 114.114.114.114:53
+b.com
+c.com
+d.com 8.8.8.8:53
+e.com

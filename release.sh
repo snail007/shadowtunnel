@@ -1,5 +1,5 @@
 #!/bin/bash
-VER="1.4"
+VER="1.5"
 RELEASE="release-${VER}"
 TRIMPATH1="/Users/snail/go/src/github.com/snail007"
 TRIMPATH=$(dirname ~/go/src/github.com/snail007)/snail007
