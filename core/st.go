@@ -27,13 +27,13 @@ import (
 	"github.com/gobwas/glob"
 	"github.com/miekg/dns"
 	gocache "github.com/pmylund/go-cache"
-	clienttransport "github.com/snail007/goproxy/core/cs/client"
-	srvtransport "github.com/snail007/goproxy/core/cs/server"
-	tou "github.com/snail007/goproxy/core/dst"
-	encryptconn "github.com/snail007/goproxy/core/lib/transport/encrypt"
-	utils "github.com/snail007/goproxy/utils"
-	jumper "github.com/snail007/goproxy/utils/jumper"
-	lbx "github.com/snail007/goproxy/utils/lb"
+	clienttransport "github.com/snail007/proxy/core/cs/client"
+	srvtransport "github.com/snail007/proxy/core/cs/server"
+	tou "github.com/snail007/proxy/core/dst"
+	encryptconn "github.com/snail007/proxy/core/lib/transport/encrypt"
+	utils "github.com/snail007/proxy/utils"
+	jumper "github.com/snail007/proxy/utils/jumper"
+	lbx "github.com/snail007/proxy/utils/lb"
 	redirx "github.com/snail007/shadowtunnel/redir"
 )
 
@@ -437,12 +437,20 @@ func cleanup() {
 		for range signalChan {
 			Stop()
 			cleanupDone <- true
+			break
 		}
 	}()
 	<-cleanupDone
 }
+
+var sotpLock = &sync.Mutex{}
+var stoped bool
+
 func Stop() {
-	if listenAddr != "" {
+	sotpLock.Lock()
+	defer sotpLock.Unlock()
+	if !stoped {
+		stoped = true
 		listenAddr = ""
 		timer.Stop()
 		timer = nil

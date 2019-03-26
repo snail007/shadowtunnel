@@ -8,7 +8,7 @@ TRIMPATH=$(dirname ~/go/src/github.com/snail007)/snail007
 if [ -d "$TRIMPATH1" ];then
 	TRIMPATH=$TRIMPATH1
 fi
-OPTS="-gcflags=-trimpath=$TRIMPATH -asmflags=-trimpath=$TRIMPATH"
+OPTS="-gcflags=all=-trimpath=$TRIMPATH -asmflags=all=-trimpath=$TRIMPATH"
 
 rm -rf ${RELEASE}
 mkdir ${RELEASE}
