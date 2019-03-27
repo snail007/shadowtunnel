@@ -38,7 +38,7 @@ import (
 )
 
 const (
-	VERSION = "1.5"
+	VERSION = "1.7"
 )
 
 type forwarders []string
