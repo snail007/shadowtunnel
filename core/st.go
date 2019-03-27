@@ -121,7 +121,7 @@ func Start(args string) {
 	flag.StringVar(&listenAddr, "l", ":50000", "local listen address, such as : 0.0.0.0:33000")
 	flag.StringVar(&method, "m", "aes-192-cfb", "method of encrypt/decrypt, these below are supported :\n"+strings.Join(encryptconn.GetCipherMethods(), ","))
 	flag.StringVar(&password, "p", "shadowtunnel", "password of encrypt/decrypt")
-	flag.Var(&forwardsAddr, "f", "forward address,such as : 127.0.0.1:8080 or with @`weight`: 127.0.0.1:8080@1")
+	flag.Var(&forwardsAddr, "f", "forward address,such as : 127.0.0.1:8080 or with #`weight`: 127.0.0.1:8080#1 or with `password`: password@127.0.0.1:8080#1")
 	flag.IntVar(&timeout, "t", 3, "connection timeout seconds")
 	flag.BoolVar(&compress, "c", false, "compress traffic")
 	flag.BoolVar(&inboundEncrypt, "e", false, "inbound connection is encrypted")
@@ -452,10 +452,14 @@ func Stop() {
 	if !stoped {
 		stoped = true
 		listenAddr = ""
-		timer.Stop()
-		timer = nil
-		dnsListenerServer.Shutdown()
-		dnsListenerServer = nil
+		if timer != nil {
+			timer.Stop()
+			timer = nil
+		}
+		if dnsListenerServer != nil {
+			dnsListenerServer.Shutdown()
+			dnsListenerServer = nil
+		}
 		lb.Stop()
 		listen.Close()
 		if profiling {
@@ -715,10 +719,10 @@ func debugf(v ...interface{}) {
 }
 func getOutconn(lbAddr, targetAddr string) (outconn net.Conn, err error) {
 	if outboundUDP {
-		outconn, err = clienttransport.TOUConnectHost(lbAddr, method, password, compress, timeout*1000)
+		outconn, err = clienttransport.TOUConnectHost(lbAddr, method, getPassword(lbAddr), compress, timeout*1000)
 	} else {
 		if outboundEncrypt {
-			outconn, err = clienttransport.TCPSConnectHost(lbAddr, method, password, compress, timeout*1000)
+			outconn, err = clienttransport.TCPSConnectHost(lbAddr, method, getPassword(lbAddr), compress, timeout*1000)
 		} else {
 			outconn, err = net.DialTimeout("tcp", lbAddr, time.Duration(timeout)*time.Second)
 		}
@@ -728,15 +732,31 @@ func getOutconn(lbAddr, targetAddr string) (outconn net.Conn, err error) {
 	}
 	return
 }
+
+var passwordMap = map[string]string{}
+
+func getPassword(addr string) string {
+	if v, ok := passwordMap[addr]; ok {
+		return v
+	}
+	return password
+}
 func initLB() {
 	configs := lbx.BackendsConfig{}
 	for _, addr := range forwardsAddr {
-		_addrInfo := strings.Split(addr, "@")
-		_addr := _addrInfo[0]
+		_addrInfo := strings.Split(addr, "#")
+		_addr := ""
+		if i := strings.LastIndex(_addrInfo[0], "@"); i >= 0 {
+			_addr = _addrInfo[0][i+1:]
+			passwordMap[_addr] = _addrInfo[0][:i]
+		} else {
+			_addr = _addrInfo[0]
+		}
 		weight := 1
 		if len(_addrInfo) == 2 {
 			weight, _ = strconv.Atoi(_addrInfo[1])
 		}
+
 		configs = append(configs, &lbx.BackendConfig{
 			Address:       _addr,
 			Weight:        weight,
